@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validações Concluídas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .styled-table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); border-radius: 0.5rem; overflow: hidden;}
+        .styled-table th, .styled-table td { border: 1px solid #e5e7eb; padding: 0.75rem 1rem; text-align: left; font-size: 0.875rem; }
+        .styled-table th { background-color: #f9fafb; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;}
+        .styled-table tbody tr:nth-child(even) { background-color: #f9fafb; }
+        .styled-table tbody tr:hover { background-color: #f3f4f6; }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="container mx-auto max-w-5xl bg-white p-6 rounded-lg shadow-md">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">Validações Concluídas</h1>
+        <div class="mb-6">
+            <a href="{{ url_for('index') }}" class="text-indigo-600 hover:text-indigo-800">&larr; Voltar para Upload</a>
+        </div>
+
+        {% if error %}
+            <div class="mb-4 p-4 rounded-md text-sm bg-red-100 text-red-800" role="alert">
+                <strong>Erro:</strong> {{ error }}
+            </div>
+        {% endif %}
+
+        {% if validacoes %}
+            <p class="text-sm text-gray-600 mb-4">Esta tabela mostra os personagens que enviaram prints e quais personagens foram usados como prova válida (detectados pela IA ou aprovados manualmente).</p>
+            <table class="styled-table">
+                <thead>
+                    <tr>
+                        <th>Data/Hora (Aprox.)</th>
+                        <th>Enviado Por (Input)</th>
+                        <th>Personagem da Prova (Detectado/Manual)</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in validacoes %}
+                        <tr>
+                            <td>{{ v.timestamp }}</td>
+                            <td>{{ v.submitter }}</td>
+                            <td>{{ v.proof_char }}</td>
+                            <td>
+                                {% if v.status == 'Automático OK' %}
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                        Automático OK
+                                    </span>
+                                {% elif v.status == 'Aprovado Manualmente' %}
+                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                        Aprovado Manual
+                                    </span>
+                                {% else %}
+                                    {{ v.status }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+             {% if not error %}
+                <p class="text-center text-gray-600">Nenhuma validação concluída encontrada no registro.</p>
+             {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

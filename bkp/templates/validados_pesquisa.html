@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validações Concluídas - Validador Tibia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        .container {
+            max-width: 1200px; /* Increased max-width for wider tables */
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .table-responsive {
+            overflow-x: auto; /* Allows horizontal scrolling on small screens */
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 0.75rem 1rem; /* Adjusted padding */
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb; /* Light gray border */
+            white-space: nowrap; /* Prevent text wrapping in cells */
+        }
+        th {
+            background-color: #f9fafb; /* Very light gray for headers */
+            font-weight: 600;
+            color: #374151; /* Darker gray text for headers */
+        }
+        tr:hover {
+            background-color: #f0f9ff; /* Light blue hover for rows */
+        }
+        .status-ok {
+            color: #10b981; /* Green for OK status */
+            font-weight: 500;
+        }
+        .status-manual {
+            color: #3b82f6; /* Blue for Manual status */
+            font-weight: 500;
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background-color: #3b82f6; /* Blue */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+        .btn-secondary {
+            background-color: #6b7280; /* Gray */
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+        .search-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .search-input {
+            flex-grow: 1;
+            padding: 0.6rem 0.8rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+        }
+        .header-actions {
+            display: flex;
+            justify-content: flex-end; /* Align buttons to the right */
+            gap: 0.75rem; /* Space between buttons */
+            margin-bottom: 1rem;
+        }
+        .page-title {
+            font-size: 1.75rem; /* Larger title */
+            font-weight: 700;
+            color: #1f2937; /* Darker text for title */
+            margin-bottom: 1.5rem;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #6b7280; /* Gray text for empty state */
+        }
+        .alert {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+        }
+        .alert-danger {
+            background-color: #fee2e2; /* Light red */
+            color: #b91c1c; /* Dark red */
+            border: 1px solid #fecaca;
+        }
+        .alert-info {
+            background-color: #e0f2fe; /* Light blue */
+            color: #0c4a6e; /* Dark blue */
+            border: 1px solid #bae6fd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-actions">
+            <a href="{{ url_for('pagina_revisao') }}" class="btn btn-secondary">Ir para Revisão</a>
+            <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
+        </div>
+
+        <h1 class="page-title">Validações Concluídas</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category if category != 'message' else 'info' }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+
+        <form method="GET" action="{{ url_for('pagina_validados_pesquisa') }}" class="search-bar">
+            <input type="text" name="q" class="search-input" placeholder="Buscar por nome do Submitter, Personagem da Prova ou Revisor..." value="{{ search_query or '' }}">
+            <button type="submit" class="btn btn-primary">Buscar</button>
+        </form>
+
+        {% if validacoes %}
+            <p class="mb-4 text-sm text-gray-600">Exibindo {{ validacoes|length }} validaç{% if validacoes|length > 1 %}ões{% else %}ão{% endif %}.</p>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>DATA/HORA</th>
+                            <th>ENVIADO POR (SUBMITTER / MAKERS)</th>
+                            <th>PERSONAGEM DA PROVA (BENEFICIÁRIO)</th>
+                            <th>STATUS</th>
+                            <th>REVISADO POR</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in validacoes %}
+                        <tr>
+                            <td>{{ item.timestamp }}</td>
+                            <td>{{ item.makers_display }}</td> <td>{{ item.beneficiario }}</td>   <td>
+                                <span class="{{ 'status-ok' if 'Automático OK' in item.status else 'status-manual' }}">
+                                    {{ item.status }}
+                                </span>
+                            </td>
+                            <td>{{ item.revisado_por if item.revisado_por else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            {% if not error %} <div class="empty-state">
+                    <p>Nenhuma validação concluída encontrada {% if search_query %} para a busca "{{ search_query }}"{% endif %}.</p>
+                </div>
+            {% endif %}
+        {% endif %}
+
+        <div class="mt-8 text-center">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Voltar para Upload</a>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revisão Manual - Validador Tibia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            max-height: 350px; /* Altura máxima da imagem para visualização */
+            object-fit: contain; /* Mantém proporção da imagem */
+            margin: 0 auto; /* Centraliza imagem se menor que container */
+            border: 1px solid #e5e7eb; /* border-gray-200 */
+            border-radius: 0.375rem; /* rounded-md */
+            background-color: #f9fafb; /* bg-gray-50 - Fundo claro para imagens transparentes */
+            display: block; /* Garante que margin auto funcione */
+        }
+        .maker-print-pair {
+            border: 1px solid #e5e7eb; /* border-gray-200 */
+            border-radius: 0.5rem; /* rounded-lg */
+            padding: 0.75rem; /* p-3 */
+            background-color: #ffffff;
+            margin-bottom: 1rem; /* Adiciona espaço entre pares verticalmente */
+            display: flex; /* Organiza conteúdo interno */
+            flex-direction: column; /* Empilha título, imagem, nome do arquivo */
+            height: 100%; /* Faz o card ocupar a altura da célula do grid */
+        }
+        .maker-print-pair h3 {
+            flex-shrink: 0; /* Impede que o título encolha */
+        }
+        .image-container {
+            flex-grow: 1; /* Faz a imagem ocupar espaço disponível */
+            display: flex; /* Centraliza a imagem verticalmente */
+            align-items: center; /* Centraliza a imagem verticalmente */
+            justify-content: center; /* Centraliza a imagem horizontalmente */
+            overflow: hidden; /* Garante que a imagem não estoure */
+            margin-bottom: 0.5rem; /* Espaço antes do nome do arquivo */
+        }
+         .btn {
+            padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 500;
+            text-decoration: none; transition: background-color 0.2s; cursor: pointer; display: inline-block;
+            text-align: center; /* Centraliza texto do botão */
+        }
+        .btn-secondary { background-color: #6b7280; color: white; } /* Cinza */
+        .btn-secondary:hover { background-color: #4b5563; }
+        .btn-danger { background-color: #ef4444; color: white; } /* Vermelho */
+        .btn-danger:hover { background-color: #dc2626; }
+        .btn-success { background-color: #22c55e; color: white; } /* Verde */
+        .btn-success:hover { background-color: #16a34a; }
+
+        .submission-block {
+             border: 1px solid #d1d5db; /* border-gray-300 */
+             border-radius: 0.5rem; /* rounded-lg */
+             padding: 1rem; /* p-4 */
+             margin-bottom: 2rem; /* Espaço entre blocos de submissão */
+             background-color: #f9fafb; /* bg-gray-50 */
+             box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow-sm */
+        }
+        .filename-text {
+            font-size: 0.75rem; /* text-xs */
+            color: #6b7280; /* text-gray-500 */
+            margin-top: 0.25rem; /* mt-1 */
+            text-align: center;
+            word-break: break-all; /* Quebra nomes de arquivo longos */
+            flex-shrink: 0; /* Impede que o nome do arquivo encolha */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+    <div class="container mx-auto max-w-7xl bg-white p-6 rounded-lg shadow-md">
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+            <h1 class="text-2xl md:text-3xl font-bold text-gray-800 text-center sm:text-left">Revisão Manual de Submissões</h1>
+            <div class="flex gap-2 flex-wrap justify-center sm:justify-end"> <a href="{{ url_for('pagina_validados_pesquisa') }}" class="btn btn-secondary text-xs sm:text-sm">Ver Validados (Admin)</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-danger text-xs sm:text-sm">Logout</a> </div>
+        </div>
+        <a href="{{ url_for('index') }}" class="mb-6 inline-block text-indigo-600 hover:text-indigo-800 text-sm">&larr; Voltar para Upload</a>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="mb-4 p-4 rounded-md text-sm
+                    {% if category == 'success' %} bg-green-100 text-green-800 border border-green-200 {% endif %}
+                    {% if category == 'danger' %} bg-red-100 text-red-800 border border-red-200 {% endif %}
+                    {% if category == 'warning' %} bg-yellow-100 text-yellow-800 border border-yellow-200 {% endif %}
+                    {% if category == 'info' %} bg-blue-100 text-blue-800 border border-blue-200 {% endif %}"
+                    role="alert">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if error %}
+             <div class="mb-4 p-4 rounded-md text-sm bg-red-100 text-red-800 border border-red-200" role="alert">
+                <strong>Erro ao carregar revisões:</strong> {{ error }}
+            </div>
+        {% endif %}
+
+        {% if submissions %}
+            <div class="space-y-8"> {% for sub in submissions %}
+                    <div class="submission-block">
+                        <h2 class="text-lg sm:text-xl font-semibold mb-1 text-gray-700">
+                            Beneficiário: <span class="font-normal">{{ sub.char_beneficiario }}</span>
+                        </h2>
+                        <p class="text-xs text-gray-500 mb-4">ID Submissão (Timestamp): <span class="font-mono">{{ sub.submission_id }}</span></p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                            {# Itera sobre os makers e filenames usando o índice #}
+                            {% for i in range(sub.makers|length) %}
+                                <div class="maker-print-pair">
+                                    <h3 class="font-medium mb-1 text-sm text-center">Maker {{ i + 1 }}: <span class="font-bold">{{ sub.makers[i] }}</span></h3>
+                                    <div class="image-container">
+                                        {% if sub.filenames[i] %}
+                                            <img src="{{ url_for('serve_suspeito', filename=sub.filenames[i]) }}" alt="Print de {{ sub.makers[i] }}">
+                                        {% else %}
+                                            <p class="text-center text-red-500 py-10 font-semibold">Erro: Nome do arquivo ausente!</p>
+                                        {% endif %}
+                                    </div>
+                                    {% if sub.filenames[i] %}
+                                     <p class="filename-text">{{ sub.filenames[i] }}</p>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <p class="text-center text-gray-500 col-span-full">Nenhum par maker/print encontrado para esta submissão.</p>
+                            {% endfor %}
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row justify-end items-center space-y-2 sm:space-y-0 sm:space-x-3 mt-4">
+                             <form action="{{ url_for('aprovar_par', submission_id=sub.submission_id) }}" method="post" class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                                <div class="w-full sm:w-auto">
+                                    <label for="revisor_name_{{ sub.submission_id }}" class="sr-only">Seu Nome (Revisor):</label>
+                                    <input type="text" name="revisor_name" id="revisor_name_{{ sub.submission_id }}" required placeholder="Seu Nome (Revisor)"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                                </div>
+                                <button type="submit"
+                                        class="btn btn-success w-full sm:w-auto text-sm"> Aprovar esta Submissão
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+             {% if not error %} <p class="text-center text-gray-600 py-12 text-lg">🎉 Não há submissões pendentes para revisar no momento. 🎉</p>
+             {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

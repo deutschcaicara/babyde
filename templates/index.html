@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validador Achievement Tibia - Makers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .dropzone-active { border-color: #2563eb; background-color: #eff6ff; }
+        input[type="file"] { opacity: 0; position: absolute; z-index: -1; width: 1px; height: 1px; overflow: hidden; }
+        .file-input-label { cursor: pointer; display: inline-block; text-align: center; }
+        .dropzone { cursor: pointer; }
+        .input-group { margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #e5e7eb; /* Separador visual */ }
+        .input-group:last-of-type { border-bottom: none; } /* Remove borda do último */
+        .input-group label { display: block; font-size: 0.875rem; font-weight: 500; color: #374151; margin-bottom: 0.25rem; }
+        .input-group input[type="text"], .input-group input[type="file"] {
+            width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+        .input-group input[type="text"]:focus {
+            outline: none; ring: 2px; ring-offset: 2px; ring-indigo-500; border-color: #4f46e5;
+        }
+        .info-note {
+            background-color: #eff6ff; color: #1e40af; border-left: 4px solid #3b82f6; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.875rem; border-radius: 0.25rem;
+        }
+        /* Botão de remover */
+        .remove-pair-btn {
+            background-color: #fee2e2; /* bg-red-100 */
+            color: #991b1b; /* text-red-800 */
+            border: 1px solid #fecaca; /* border-red-300 */
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            float: right; /* Alinha à direita */
+            margin-top: -1.5rem; /* Puxa para cima */
+            position: relative; /* Para z-index funcionar se necessário */
+            z-index: 10;
+        }
+        .remove-pair-btn:hover {
+            background-color: #fecaca; /* bg-red-200 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl"> <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Validador "Baby Sitter" via Makers</h1>
+        <p class="text-sm text-gray-600 mb-4 text-center">
+            Informe o personagem beneficiário e adicione os "Makers" (ajudantes) que possuem o achievement.
+            Cada print deve mostrar a Cyclopedia do respectivo Maker com o achievement "Baby Sitter" concluído.
+        </p>
+        <p class="info-note">
+            <strong>Nota:</strong> Você pode adicionar vários Makers nesta única submissão. Lembre-se que cada Maker só pode ser usado uma única vez no total de todas as validações, e um beneficiário tem um limite total de 30 aprovações.
+        </p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="my-4"> {% for category, message in messages %}
+                    <div class="p-4 rounded-md text-sm
+                        {% if category == 'success' %} bg-green-100 text-green-800 {% endif %}
+                        {% if category == 'danger' %} bg-red-100 text-red-800 {% endif %}
+                        {% if category == 'warning' %} bg-yellow-100 text-yellow-800 {% endif %}
+                        {% if category == 'info' %} bg-blue-100 text-blue-800 {% endif %}"
+                        role="alert">
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form action="{{ url_for('upload_files') }}" method="post" enctype="multipart/form-data">
+            <div class="mb-6 pb-6 border-b border-gray-300"> <label for="char_beneficiario" class="block text-sm font-medium text-gray-700 mb-1">Nick TS:</label>
+                <input type="text" name="char_beneficiario" id="char_beneficiario" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+
+            <div id="maker-pairs-container">
+                <div class="maker-pair-group input-group" data-pair-index="1">
+                    <label for="maker_name_1" class="block text-sm font-medium text-gray-700 mb-1">boneco 1:</label>
+                    <input type="text" name="maker_name_1" id="maker_name_1" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm mb-4">
+
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Print 1 (Cyclopedia do Maker 1):</label>
+                    <div class="dropzone mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md" id="dropzone-container-1">
+                        <div class="space-y-1 text-center">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                            <div class="flex text-sm text-gray-600 justify-center"> <label for="print_1" class="file-input-label relative bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                                    <span>Carregar Print 1</span><input id="print_1" name="print_1" type="file" accept="image/png, image/jpeg, image/jpg" required></label>
+                                <p class="pl-1">ou arraste e solte</p>
+                            </div>
+                            <p class="text-xs text-gray-500 filename-display">PNG, JPG, JPEG</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="maker-pair-group input-group" data-pair-index="2">
+                     <label for="maker_name_2" class="block text-sm font-medium text-gray-700 mb-1">Boneco 2:</label>
+                    <input type="text" name="maker_name_2" id="maker_name_2" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm mb-4">
+
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Print 2 (Cyclopedia do Maker 2):</label>
+                     <div class="dropzone mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md" id="dropzone-container-2">
+                        <div class="space-y-1 text-center">
+                             <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                            <div class="flex text-sm text-gray-600 justify-center"> <label for="print_2" class="file-input-label relative bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                                    <span>Carregar Print 2</span><input id="print_2" name="print_2" type="file" accept="image/png, image/jpeg, image/jpg" required></label>
+                                <p class="pl-1">ou arraste e solte</p>
+                            </div>
+                            <p class="text-xs text-gray-500 filename-display">PNG, JPG, JPEG</p>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
+            <div class="mt-4 mb-8 text-center">
+                <button type="button" id="add-pair-btn" class="text-sm font-medium text-indigo-600 hover:text-indigo-800 bg-indigo-100 hover:bg-indigo-200 px-4 py-2 rounded-md">
+                    + Adicionar Outro Par de Maker/Print
+                </button>
+            </div>
+
+            <div class="mt-8">
+                <button type="submit"
+                        class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Enviar Todos os Pares para Validação
+                </button>
+            </div>
+             <div class="text-center mt-6">
+                <a href="{{ url_for('login') }}" class="text-sm text-indigo-600 hover:text-indigo-800">Acesso Restrito (Revisão/Admin)</a>
+             </div>
+             <div class="text-center mt-2">
+                <a href="{{ url_for('validados_publico') }}" class="text-sm text-gray-600 hover:text-gray-800">Ver Validações Públicas</a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        let pairIndex = 2; // Começa em 2 porque já temos 1 e 2 no HTML
+
+        // Função para inicializar drag-and-drop e eventos para um container específico
+        function initializeDropzone(containerElement) {
+            const fileInput = containerElement.querySelector('input[type="file"]');
+            const fileNameDisplay = containerElement.querySelector('.filename-display');
+            const dropzoneDiv = containerElement.querySelector('.dropzone');
+            if (!fileInput || !fileNameDisplay || !dropzoneDiv) return;
+
+            const defaultText = "PNG, JPG, JPEG";
+
+            dropzoneDiv.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                dropzoneDiv.classList.add('dropzone-active');
+            });
+            dropzoneDiv.addEventListener('dragleave', () => {
+                dropzoneDiv.classList.remove('dropzone-active');
+            });
+            dropzoneDiv.addEventListener('drop', (event) => {
+                event.preventDefault();
+                dropzoneDiv.classList.remove('dropzone-active');
+                if (event.dataTransfer.files.length) {
+                    const file = event.dataTransfer.files[0];
+                    if (file.type.startsWith('image/png') || file.type.startsWith('image/jpeg')) {
+                        fileInput.files = event.dataTransfer.files;
+                        fileNameDisplay.textContent = file.name;
+                    } else {
+                        fileNameDisplay.textContent = 'Apenas PNG/JPG/JPEG!';
+                        fileInput.value = ''; // Limpa seleção inválida
+                    }
+                }
+            });
+            fileInput.addEventListener('change', () => {
+                fileNameDisplay.textContent = fileInput.files.length ? fileInput.files[0].name : defaultText;
+            });
+            // Permite clicar na área para abrir seleção de arquivo
+            dropzoneDiv.addEventListener('click', (e) => {
+                 if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'LABEL' && !e.target.closest('label')) {
+                     fileInput.click();
+                 }
+            });
+        }
+
+        // Inicializa os dropzones existentes
+        document.querySelectorAll('.maker-pair-group').forEach(group => {
+            initializeDropzone(group);
+        });
+
+
+        // Adiciona novo par
+        document.getElementById('add-pair-btn').addEventListener('click', () => {
+            pairIndex++;
+            const container = document.getElementById('maker-pairs-container');
+            const newPairGroup = document.createElement('div');
+            newPairGroup.classList.add('maker-pair-group', 'input-group');
+            newPairGroup.setAttribute('data-pair-index', pairIndex); // Adiciona índice ao grupo
+
+            newPairGroup.innerHTML = `
+                <button type="button" class="remove-pair-btn" title="Remover este par">X</button> <label for="maker_name_${pairIndex}" class="block text-sm font-medium text-gray-700 mb-1">Nome do Maker ${pairIndex}:</label>
+                <input type="text" name="maker_name_${pairIndex}" id="maker_name_${pairIndex}" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm mb-4">
+
+                <label for="print_${pairIndex}" class="block text-sm font-medium text-gray-700 mb-1">Print ${pairIndex} (Cyclopedia do Maker ${pairIndex}):</label>
+                <div class="dropzone mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md" id="dropzone-container-${pairIndex}">
+                    <div class="space-y-1 text-center">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                        <div class="flex text-sm text-gray-600 justify-center"> <label for="print_${pairIndex}" class="file-input-label relative bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                                <span>Carregar Print ${pairIndex}</span><input id="print_${pairIndex}" name="print_${pairIndex}" type="file" accept="image/png, image/jpeg, image/jpg" required></label>
+                            <p class="pl-1">ou arraste e solte</p>
+                        </div>
+                        <p class="text-xs text-gray-500 filename-display">PNG, JPG, JPEG</p>
+                    </div>
+                </div>
+            `;
+            container.appendChild(newPairGroup);
+            // Inicializa o drag-and-drop para o novo grupo
+            initializeDropzone(newPairGroup);
+
+            // Adiciona funcionalidade ao botão de remover do novo par
+            newPairGroup.querySelector('.remove-pair-btn').addEventListener('click', function() {
+                newPairGroup.remove();
+                // Poderia re-indexar os campos aqui se fosse necessário, mas para o backend geralmente não é
+            });
+        });
+
+    </script>
+</body>
+</html>
+```
+

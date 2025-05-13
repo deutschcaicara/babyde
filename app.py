@@ -14,7 +14,6 @@ from flask import Flask, request, render_template, redirect, url_for, flash, sen
 from werkzeug.utils import secure_filename
 
 # --- Configuração ---
-# UPLOAD_FOLDER não é mais usado diretamente para salvar, os paths são definidos abaixo
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 # Variáveis de ambiente serão configuradas no Railway
@@ -34,38 +33,48 @@ MIN_MAKER_PAIRS_REQUIRED = 2 # Exige pelo menos 2 pares por submissão
 
 # --- Inicialização do Flask ---
 app = Flask(__name__)
-# app.config['UPLOAD_FOLDER'] não é mais necessário aqui
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
-# Configuração de logging - Nível DEBUG para mais detalhes
+# Configuração de logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(funcName)s:%(lineno)d] %(message)s')
 
-# --- Caminhos para Dados Persistentes (Adaptados para Railway Volumes) ---
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+# --- Caminhos para Dados Persistentes (Adaptados para ÚNICO Volume no Railway) ---
+BASE_DIR = os.path.abspath(os.path.dirname(__file__)) # Diretório raiz da aplicação
 logging.info(f"BASE_DIR (diretório do app.py) detectado como: {BASE_DIR}")
 
-# Diretório para os CSVs (será montado como um volume no Railway)
-DATA_DIR = os.path.join(BASE_DIR, 'data_persistente')
-os.makedirs(DATA_DIR, exist_ok=True)
-logging.info(f"Diretório de dados persistentes (CSVs): {DATA_DIR}")
+# Este é o caminho DENTRO DO CONTAINER onde o volume do Railway será montado.
+# Exemplo: Se você montar seu volume do Railway em '/data', então defina RAILWAY_VOLUME_MOUNT_PATH_NAME = 'data'
+# Se montar em '/app/persistent_storage', defina RAILWAY_VOLUME_MOUNT_PATH_NAME = 'persistent_storage'
+# Para este exemplo, vamos assumir que o volume será montado em um diretório chamado 'railway_data_volume' na raiz do app.
+RAILWAY_VOLUME_MOUNT_PATH_NAME = 'dados_persistentes_app' # NOME DA PASTA QUE SERÁ O PONTO DE MONTAGEM DO VOLUME
+PERSISTENT_STORAGE_BASE_DIR = os.path.join(BASE_DIR, RAILWAY_VOLUME_MOUNT_PATH_NAME)
 
-PROCESSADOS_CSV = os.path.join(DATA_DIR, 'processados.csv')
-REVISAO_CSV = os.path.join(DATA_DIR, 'revisao_log.csv')
+# Cria o diretório base para o volume, se não existir (o Railway deve criá-lo ao montar o volume)
+os.makedirs(PERSISTENT_STORAGE_BASE_DIR, exist_ok=True)
+logging.info(f"Diretório base para dados persistentes (ponto de montagem do volume): {PERSISTENT_STORAGE_BASE_DIR}")
+
+# Subdiretório para os CSVs DENTRO do volume
+CSVS_DIR = os.path.join(PERSISTENT_STORAGE_BASE_DIR, 'csv_data')
+os.makedirs(CSVS_DIR, exist_ok=True)
+logging.info(f"Subdiretório para CSVs dentro do volume: {CSVS_DIR}")
+
+PROCESSADOS_CSV = os.path.join(CSVS_DIR, 'processados.csv')
+REVISAO_CSV = os.path.join(CSVS_DIR, 'revisao_log.csv')
 logging.info(f"Caminho para PROCESSADOS_CSV: {PROCESSADOS_CSV}")
 logging.info(f"Caminho para REVISAO_CSV: {REVISAO_CSV}")
 
-# Diretórios para uploads (será montado como um volume no Railway)
-UPLOADS_DIR = os.path.join(BASE_DIR, 'uploads_persistentes')
-os.makedirs(UPLOADS_DIR, exist_ok=True)
-logging.info(f"Diretório de uploads persistentes: {UPLOADS_DIR}")
+# Subdiretório para uploads DENTRO do volume
+UPLOADS_SUBDIR = os.path.join(PERSISTENT_STORAGE_BASE_DIR, 'uploads')
+os.makedirs(UPLOADS_SUBDIR, exist_ok=True)
+logging.info(f"Subdiretório para uploads dentro do volume: {UPLOADS_SUBDIR}")
 
-PROCESSADOS_DIR = os.path.join(UPLOADS_DIR, 'processados') # Para arquivos aprovados
-SUSPEITOS_DIR = os.path.join(UPLOADS_DIR, 'suspeitos')   # Para arquivos pendentes de revisão
+PROCESSADOS_DIR = os.path.join(UPLOADS_SUBDIR, 'processados') # Para arquivos aprovados
+SUSPEITOS_DIR = os.path.join(UPLOADS_SUBDIR, 'suspeitos')   # Para arquivos pendentes de revisão
 os.makedirs(PROCESSADOS_DIR, exist_ok=True)
 os.makedirs(SUSPEITOS_DIR, exist_ok=True)
-logging.info(f"Diretório de SUSPEITOS (para salvar uploads) definido como: {SUSPEITOS_DIR}")
-logging.info(f"Diretório de PROCESSADOS (para aprovados) definido como: {PROCESSADOS_DIR}")
+logging.info(f"Diretório de SUSPEITOS (dentro de uploads no volume) definido como: {SUSPEITOS_DIR}")
+logging.info(f"Diretório de PROCESSADOS (dentro de uploads no volume) definido como: {PROCESSADOS_DIR}")
 
 
 # --- Funções Auxiliares ---
@@ -76,7 +85,7 @@ def allowed_file(filename):
 def initialize_csv(file_path, fieldnames):
     """Cria o arquivo CSV com cabeçalho se não existir."""
     try:
-        # O diretório DATA_DIR já deve ter sido criado
+        # As subpastas (CSVS_DIR) já devem ter sido criadas
         if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
             with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -97,7 +106,7 @@ REVISAO_FIELDS = [
 
 def initialize_all_csvs():
     """Inicializa todos os arquivos CSV necessários."""
-    logging.info(f"Inicializando CSVs em {DATA_DIR}...")
+    logging.info(f"Inicializando CSVs em {CSVS_DIR}...")
     initialize_csv(PROCESSADOS_CSV, PROCESSADOS_FIELDS)
     initialize_csv(REVISAO_CSV, REVISAO_FIELDS)
 
@@ -107,7 +116,6 @@ initialize_all_csvs()
 def log_processamento(data):
     """Registra uma submissão no CSV principal."""
     try:
-        # initialize_csv(PROCESSADOS_CSV, PROCESSADOS_FIELDS) # Já chamado globalmente
         with open(PROCESSADOS_CSV, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=PROCESSADOS_FIELDS, extrasaction='ignore')
             row_data = {field: data.get(field, '') for field in PROCESSADOS_FIELDS}
@@ -122,7 +130,6 @@ def log_processamento(data):
 def log_revisao(timestamp_revisao, nome_revisor, char_beneficiario, makers_list, filenames_list, acao, motivo_rejeicao=''):
     """Registra uma ação de revisão manual no CSV de log."""
     try:
-        # initialize_csv(REVISAO_CSV, REVISAO_FIELDS) # Já chamado globalmente
         with open(REVISAO_CSV, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=REVISAO_FIELDS, extrasaction='ignore')
             writer.writerow({
@@ -132,21 +139,16 @@ def log_revisao(timestamp_revisao, nome_revisor, char_beneficiario, makers_list,
                 'makers_aprovados': ','.join(makers_list) if isinstance(makers_list, list) else makers_list or '',
                 'filenames_associados': ','.join(filenames_list) if isinstance(filenames_list, list) else filenames_list or '',
                 'acao': acao,
-                'motivo_rejeicao_log': motivo_rejeicao if acao == 'Rejeitado Manual' else '' # Corrigido para 'Rejeitado Manual'
+                'motivo_rejeicao_log': motivo_rejeicao if acao == 'Rejeitado Manual' else ''
             })
         logging.info(f"Revisão manual logada por {nome_revisor}. Ação: {acao} para B: {char_beneficiario}. Motivo: {motivo_rejeicao if motivo_rejeicao else 'N/A'}")
     except Exception as e: logging.exception(f"Erro ao logar revisão manual: {e}")
 
 def get_validated_data():
     """Lê o CSV de processados e retorna contagem de makers aprovados por beneficiário e makers já usados globalmente."""
-    # Retorna um dicionário:
-    # 'beneficiarios_makers_count': {'nome_benef_lower': contagem_makers_aprovados}
-    # 'used_makers_global': {set_de_makers_usados_globalmente_lower}
-    
     beneficiarios_makers_count = defaultdict(int)
     used_makers_global = set()
     try:
-        # initialize_csv(PROCESSADOS_CSV, PROCESSADOS_FIELDS) # Já chamado
         if not os.path.exists(PROCESSADOS_CSV) or os.path.getsize(PROCESSADOS_CSV) == 0:
             logging.warning("get_validated_data: processados.csv vazio ou não encontrado.")
             return {'beneficiarios_makers_count': dict(beneficiarios_makers_count), 'used_makers_global': used_makers_global}
@@ -161,13 +163,10 @@ def get_validated_data():
                 if row.get('status_geral_submissao') == 'Aprovado Manual':
                     beneficiario_lower = row.get('char_beneficiario', '').strip().lower()
                     makers_str = row.get('all_maker_inputs', '')
-                    
                     if makers_str:
                         current_makers_in_row = [m.strip().lower() for m in makers_str.split(',') if m.strip()]
-                        # Adiciona à contagem de makers para este beneficiário
                         if beneficiario_lower:
                             beneficiarios_makers_count[beneficiario_lower] += len(current_makers_in_row)
-                        # Adiciona ao conjunto global de makers usados
                         used_makers_global.update(current_makers_in_row)
                         
     except FileNotFoundError:
@@ -188,6 +187,7 @@ def login_required(f):
     return decorated_function
 
 # --- Rotas ---
+# As rotas permanecem as mesmas, apenas os caminhos internos de arquivos foram ajustados.
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -255,12 +255,11 @@ def upload_files():
         flash(f'É necessário enviar pelo menos {MIN_MAKER_PAIRS_REQUIRED} pares válidos de Maker/Print.', 'warning'); logging.warning(f"Menos de {MIN_MAKER_PAIRS_REQUIRED} pares válidos enviados."); return redirect(url_for('index'))
     logging.info(f"Submissão válida recebida para B: '{char_beneficiario}' com {len(submitted_pairs)} pares.")
 
-    validated_data = get_validated_data() # Obtém contagens e makers usados
+    validated_data = get_validated_data()
     beneficiario_lower = char_beneficiario.lower()
     rejection_reason, rejection_message = None, None
-    
     current_beneficiary_makers_count = validated_data['beneficiarios_makers_count'].get(beneficiario_lower, 0)
-    needed_approvals = len(submitted_pairs) # Número de makers nesta submissão
+    needed_approvals = len(submitted_pairs)
     
     logging.debug(f"Verificando limites/duplicados para upload: B='{beneficiario_lower}' (Makers Aprovados={current_beneficiary_makers_count}, Limite={BENEFICIARIO_APPROVAL_LIMIT}), Makers nesta submissão={maker_names_in_submission}")
     
@@ -268,7 +267,6 @@ def upload_files():
         rejection_reason = 'beneficiario_limit_exceeded'
         rejection_message = f"Rejeitado: Beneficiário '{char_beneficiario}' já tem {current_beneficiary_makers_count} makers aprovados. Esta submissão com {needed_approvals} makers excederia o limite de {BENEFICIARIO_APPROVAL_LIMIT}."
     else:
-        # Verifica duplicidade global de makers
         for pair in submitted_pairs:
             maker_lower = pair['name'].lower()
             if maker_lower in validated_data['used_makers_global']:
@@ -278,7 +276,7 @@ def upload_files():
         flash(rejection_message, 'warning'); logging.warning(f"Submissão rejeitada ({rejection_reason}): {rejection_message}")
         log_entry_rejected = {
             'timestamp': datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f"), 'char_beneficiario': char_beneficiario,
-            'all_maker_inputs': ','.join([p['name'] for p in submitted_pairs]), 'all_filenames': ','.join([p['file'].filename for p in submitted_pairs]), # Nome original do arquivo
+            'all_maker_inputs': ','.join([p['name'] for p in submitted_pairs]), 'all_filenames': ','.join([p['file'].filename for p in submitted_pairs]),
             'status_geral_submissao': 'Rejeitado Duplicado/Limite', 'revisado_por': 'Sistema', 'timestamp_revisao': datetime.datetime.now().isoformat(), 'rejection_reason': rejection_reason }
         log_processamento(log_entry_rejected)
         return render_template('resultado.html', message=rejection_message, status='warning', char_beneficiario=char_beneficiario, current_count=current_beneficiary_makers_count, limit=BENEFICIARIO_APPROVAL_LIMIT, rejection_reason=rejection_reason)
@@ -293,7 +291,7 @@ def upload_files():
         safe_maker_name = "".join(c for c in maker_name if c.isalnum() or c == ' ').strip().replace(' ', '_')
         file_extension = file_obj.filename.rsplit('.', 1)[1].lower()
         filename = secure_filename(f"{timestamp_str}_B_{safe_beneficiario_name}_M{index}_{safe_maker_name}_img{index}.{file_extension}")
-        save_path = os.path.join(SUSPEITOS_DIR, filename) # Salva na pasta de suspeitos
+        save_path = os.path.join(SUSPEITOS_DIR, filename) # Salva na pasta de suspeitos DENTRO DO VOLUME
         logging.debug(f"Tentando salvar arquivo em: {save_path} (Caminho absoluto: {os.path.abspath(save_path)})")
         try:
             file_obj.seek(0); file_obj.save(save_path)
@@ -303,7 +301,7 @@ def upload_files():
                 logging.error(f"Arquivo salvo mas NÃO ENCONTRADO IMEDIATAMENTE: {filename} em {save_path}. Verifique permissões ou caminho.")
             saved_filenames.append(filename)
         except Exception as e:
-            for fname in saved_filenames: # Tenta remover os já salvos desta submissão
+            for fname in saved_filenames:
                 try: os.remove(os.path.join(SUSPEITOS_DIR, fname))
                 except OSError: pass
             logging.exception(f"Erro CRÍTICO ao salvar {file_obj.filename} para {save_path}: {e}")
@@ -333,7 +331,6 @@ def pagina_validados_pesquisa():
     error_msg = None
     validacoes_para_template = [] 
     try:
-        # initialize_all_csvs() # Já chamado globalmente
         if not os.path.exists(PROCESSADOS_CSV) or os.path.getsize(PROCESSADOS_CSV) == 0:
             error_msg = "Arquivo de validações (processados.csv) não encontrado ou vazio."
         else:
@@ -344,7 +341,6 @@ def pagina_validados_pesquisa():
                 else:
                     temp_validacoes = [] 
                     for row in reader:
-                        # Filtra por status e também pode filtrar por rejeitados se desejar
                         status_submissao = row.get('status_geral_submissao', '')
                         if status_submissao == 'Aprovado Manual' or status_submissao == 'Rejeitado Manual' or status_submissao == 'Rejeitado Duplicado/Limite':
                             beneficiario = row.get('char_beneficiario', 'N/A')
@@ -352,56 +348,43 @@ def pagina_validados_pesquisa():
                             makers_list = [m.strip() for m in makers_str.split(',') if m.strip()]
                             revisor = row.get('revisado_por', '')
                             timestamp_rev_iso = row.get('timestamp_revisao', '')
-                            timestamp_original_submissao = row.get('timestamp', '') # Para ordenação
+                            timestamp_original_submissao = row.get('timestamp', '')
                             rejection_reason_text = row.get('rejection_reason', '')
-
                             timestamp_display = timestamp_rev_iso if timestamp_rev_iso else timestamp_original_submissao
-
-                            try: # Tenta formatar o timestamp de revisão, se existir
+                            try:
                                 if timestamp_rev_iso:
                                     timestamp_rev_dt = datetime.datetime.fromisoformat(timestamp_rev_iso)
                                     timestamp_display = timestamp_rev_dt.strftime("%Y-%m-%d %H:%M")
-                                elif timestamp_original_submissao: # Fallback para timestamp da submissao
+                                elif timestamp_original_submissao:
                                      timestamp_orig_dt = datetime.datetime.strptime(timestamp_original_submissao, "%Y%m%d_%H%M%S_%f")
                                      timestamp_display = timestamp_orig_dt.strftime("%Y-%m-%d %H:%M")
                             except ValueError:
-                                logging.warning(f"Falha ao converter timestamp '{timestamp_display}' para B '{beneficiario}'. Usando string original.")
-
+                                logging.warning(f"Falha ao converter timestamp '{timestamp_display}' para B '{beneficiario}'.")
                             matches_query = (
-                                not query or 
-                                query in beneficiario.lower() or
+                                not query or query in beneficiario.lower() or
                                 (revisor and query in revisor.lower()) or
                                 any(query in maker.lower() for maker in makers_list) or
                                 (rejection_reason_text and query in rejection_reason_text.lower())
                             )
-
                             if matches_query:
                                 status_completo = status_submissao
-                                if status_submissao == 'Aprovado Manual' and revisor:
-                                    status_completo = f'Aprovado por {revisor}'
-                                elif status_submissao == 'Rejeitado Manual' and revisor:
-                                    status_completo = f'Rejeitado por {revisor} (Motivo: {rejection_reason_text})'
-                                elif status_submissao == 'Rejeitado Duplicado/Limite':
-                                     status_completo = f'Rej. Automático (Motivo: {rejection_reason_text})'
-
-
+                                if status_submissao == 'Aprovado Manual' and revisor: status_completo = f'Aprovado por {revisor}'
+                                elif status_submissao == 'Rejeitado Manual' and revisor: status_completo = f'Rejeitado por {revisor} (Motivo: {rejection_reason_text})'
+                                elif status_submissao == 'Rejeitado Duplicado/Limite': status_completo = f'Rej. Automático (Motivo: {rejection_reason_text})'
                                 temp_validacoes.append({
-                                    'timestamp_sort': timestamp_rev_iso or timestamp_original_submissao, # para ordenação correta
-                                    'timestamp_display': timestamp_display,
-                                    'beneficiario': beneficiario,
+                                    'timestamp_sort': timestamp_rev_iso or timestamp_original_submissao,
+                                    'timestamp_display': timestamp_display, 'beneficiario': beneficiario,
                                     'makers_display': ', '.join(makers_list) if makers_list else 'N/A',
                                     'status': status_completo,
-                                    'revisado_por': revisor if revisor else ( 'Sistema' if status_submissao == 'Rejeitado Duplicado/Limite' else '-'),
+                                    'revisado_por': revisor if revisor else ('Sistema' if status_submissao == 'Rejeitado Duplicado/Limite' else '-'),
                                     'submission_id': timestamp_original_submissao 
                                 })
-                    # Ordena por data de revisão/submissão (mais recentes primeiro)
                     temp_validacoes.sort(key=lambda x: x.get('timestamp_sort', '0'), reverse=True)
                     validacoes_para_template = temp_validacoes 
     except Exception as e:
         error_msg = f"Erro ao carregar validações para pesquisa: {e}"
         logging.exception(error_msg)
     return render_template('validados_pesquisa.html', validacoes=validacoes_para_template, limit=BENEFICIARIO_APPROVAL_LIMIT, error=error_msg, search_query=query)
-
 
 @app.route('/revisao', methods=['GET'])
 @login_required
@@ -411,13 +394,11 @@ def pagina_revisao():
     logging.debug(f"--- INÍCIO ROTA /revisao ---")
     logging.debug(f"Tentando ler CSV: {PROCESSADOS_CSV} (Abs: {os.path.abspath(PROCESSADOS_CSV)})")
     logging.debug(f"Verificando arquivos em: {SUSPEITOS_DIR} (Abs: {os.path.abspath(SUSPEITOS_DIR)})")
-
     try:
-        if not os.path.isdir(SUSPEITOS_DIR):
+        if not os.path.isdir(SUSPEITOS_DIR): # Verifica se a pasta de suspeitos DENTRO DO VOLUME existe
              logging.error(f"Diretório de suspeitos NÃO ENCONTRADO em {SUSPEITOS_DIR}")
              error_msg = f"Erro crítico: Diretório de arquivos pendentes ({SUSPEITOS_DIR}) não encontrado."
              return render_template('revisao.html', submissions=[], error=error_msg)
-        # initialize_all_csvs() # Já chamado globalmente
         if not os.path.exists(PROCESSADOS_CSV) or os.path.getsize(PROCESSADOS_CSV) == 0:
             error_msg = "Arquivo de processamento (processados.csv) não encontrado ou vazio."
             logging.warning(f"/revisao: {error_msg}")
@@ -435,15 +416,13 @@ def pagina_revisao():
                         status_atual = row.get('status_geral_submissao', '').strip()
                         submission_id_from_row = row.get('timestamp')
                         logging.debug(f"/revisao: Lendo linha {row_count} do CSV: ID='{submission_id_from_row}', Status='{status_atual}'")
-
-                        if status_atual == 'Pendente Revisão': # Apenas pendentes para esta página
+                        if status_atual == 'Pendente Revisão':
                             makers_str = row.get('all_maker_inputs', '')
                             filenames_str = row.get('all_filenames', '')
                             beneficiario = row.get('char_beneficiario', 'N/A')
                             logging.info(f"/revisao: Submissão PENDENTE encontrada: ID={submission_id_from_row}, B='{beneficiario}', Makers='{makers_str}', Files='{filenames_str}'")
                             makers_list = [m.strip() for m in makers_str.split(',') if m.strip()]
                             filenames_list = [f.strip() for f in filenames_str.split(',') if f.strip()]
-
                             if not submission_id_from_row or not makers_list or not filenames_list:
                                 logging.warning(f"/revisao: Submissão pendente {submission_id_from_row} com dados faltando. Pulando.")
                                 continue
@@ -461,194 +440,125 @@ def pagina_revisao():
                                 if not exists:
                                     logging.error(f"/revisao: ARQUIVO NÃO ENCONTRADO! Nome: '{fname}', para submissão {submission_id_from_row}")
                                     all_files_exist = False
-                                    missing_files_log.append(fname) # Não precisa de break para logar todos os faltantes
-                            
+                                    missing_files_log.append(fname)
                             if all_files_exist:
                                 logging.info(f"/revisao: OK! Todos os {len(filenames_list)} arquivos encontrados para submissão {submission_id_from_row}.")
                                 submissions_pending.append({
-                                    'submission_id': submission_id_from_row,
-                                    'char_beneficiario': beneficiario,
-                                    'makers': makers_list,
-                                    'filenames': filenames_list,
+                                    'submission_id': submission_id_from_row, 'char_beneficiario': beneficiario,
+                                    'makers': makers_list, 'filenames': filenames_list,
                                     'timestamp_original': submission_id_from_row 
                                 })
                             else:
                                 logging.warning(f"/revisao: Submissão {submission_id_from_row} IGNORADA para revisão: Arquivos ausentes: {missing_files_log}.")
-                        # else: # Opcional: logar status não pendentes
-                        #     logging.debug(f"/revisao: Linha {row_count} (ID: {submission_id_from_row}) não 'Pendente Revisão', status: '{status_atual}'.")
-        
         submissions_pending.sort(key=lambda x: x.get('timestamp_original', '0'), reverse=True)
         logging.info(f"/revisao: Total de submissões pendentes para exibir: {len(submissions_pending)}")
-
     except FileNotFoundError:
         error_msg = f"Erro: Arquivo {PROCESSADOS_CSV} não encontrado."
         logging.error(f"/revisao: {error_msg}")
     except Exception as e:
         error_msg = f"Erro inesperado ao listar pendentes: {e}"
-        logging.exception(error_msg)
-        flash(error_msg, "danger") 
-    
+        logging.exception(error_msg); flash(error_msg, "danger") 
     logging.debug(f"--- FIM ROTA /revisao ---")
     return render_template('revisao.html', submissions=submissions_pending, error=error_msg)
 
-
-@app.route('/suspeitos/<path:filename>')
+@app.route('/suspeitos/<path:filename>') # Rota para servir imagens da pasta de suspeitos
 @login_required
 def serve_suspeito(filename):
-    """Serve arquivos de imagem da pasta de suspeitos (ou processados como fallback)."""
     try:
         if '..' in filename or filename.startswith('/'):
             logging.warning(f"Tentativa de acesso inválido a arquivo: {filename}")
             return "Acesso inválido", 400
         safe_filename = secure_filename(filename)
-        
-        # Tenta servir da pasta SUSPEITOS_DIR (que está dentro de UPLOADS_DIR)
-        suspeito_path_relativo_a_uploads = os.path.join('suspeitos', safe_filename) # Caminho relativo dentro de UPLOADS_DIR
+        # SUSPEITOS_DIR já é o caminho absoluto para a pasta DENTRO do volume
         logging.debug(f"Tentando servir arquivo suspeito: {safe_filename} de {SUSPEITOS_DIR}")
-        # send_from_directory espera o diretório PAI e o nome do arquivo DENTRO dele
         if os.path.exists(os.path.join(SUSPEITOS_DIR, safe_filename)):
              logging.debug(f"Servindo de SUSPEITOS: {safe_filename}")
              return send_from_directory(SUSPEITOS_DIR, safe_filename, as_attachment=False)
-
-        # Fallback: Tenta servir da pasta PROCESSADOS_DIR
-        processado_path_relativo_a_uploads = os.path.join('processados', safe_filename)
+        # Fallback para PROCESSADOS_DIR
         logging.debug(f"Não encontrado em suspeitos. Tentando servir de processados: {safe_filename} de {PROCESSADOS_DIR}")
         if os.path.exists(os.path.join(PROCESSADOS_DIR, safe_filename)):
             logging.warning(f"Servindo arquivo de PROCESSADOS (fallback): {safe_filename}")
             return send_from_directory(PROCESSADOS_DIR, safe_filename, as_attachment=False)
-
         logging.error(f"Arquivo não encontrado para servir (nem suspeito, nem processado): {safe_filename}")
         return "Arquivo não encontrado", 404
     except Exception as e:
         logging.exception(f"Erro ao servir arquivo {filename}: {e}")
         return "Erro interno do servidor", 500
 
-
 @app.route('/aprovar/<submission_id>', methods=['POST'])
 @login_required
 def aprovar_par(submission_id):
     nome_revisor_manual = request.form.get('revisor_name', '').strip()
     if not nome_revisor_manual:
-        flash("Nome do revisor é obrigatório para aprovar.", "warning")
-        return redirect(url_for('pagina_revisao'))
+        flash("Nome do revisor é obrigatório para aprovar.", "warning"); return redirect(url_for('pagina_revisao'))
     logging.info(f"Tentativa de aprovação por '{nome_revisor_manual}' para Submissão ID: '{submission_id}'")
-    original_rows = []
-    row_index_to_update = -1
-    submission_data = None
+    original_rows = []; row_index_to_update = -1; submission_data = None
     try:
-        # initialize_csv(PROCESSADOS_CSV, PROCESSADOS_FIELDS) # Já chamado
         with open(PROCESSADOS_CSV, 'r', newline='', encoding='utf-8') as infile:
             reader = csv.DictReader(infile)
             if not reader.fieldnames or not all(f in reader.fieldnames for f in PROCESSADOS_FIELDS):
-                flash("Erro crítico: Formato do arquivo processados.csv inválido.", "danger")
-                logging.error("Formato inválido do processados.csv ao tentar aprovar.")
-                return redirect(url_for('pagina_revisao'))
+                flash("Erro crítico: Formato do arquivo processados.csv inválido.", "danger"); logging.error("Formato inválido do processados.csv ao tentar aprovar."); return redirect(url_for('pagina_revisao'))
             original_rows = list(reader) 
-        
         for i, row in enumerate(original_rows):
             if row.get('timestamp') == submission_id and row.get('status_geral_submissao', '').strip() == 'Pendente Revisão':
-                submission_data = row 
-                row_index_to_update = i 
-                logging.debug(f"Encontrada submissão pendente no CSV para ID {submission_id} na linha {i}.")
-                break 
-        
+                submission_data = row; row_index_to_update = i; logging.debug(f"Encontrada submissão pendente para ID {submission_id} na linha {i}."); break 
         if not submission_data:
-            flash(f"Erro: Submissão com ID '{submission_id}' não encontrada ou já processada.", "danger")
-            logging.error(f"Tentativa de aprovar submissão {submission_id} falhou: Não encontrada ou não está pendente.")
-            return redirect(url_for('pagina_revisao'))
-
+            flash(f"Erro: Submissão ID '{submission_id}' não encontrada ou já processada.", "danger"); logging.error(f"Aprovar {submission_id} falhou: Não encontrada/pendente."); return redirect(url_for('pagina_revisao'))
         char_beneficiario_original = submission_data.get('char_beneficiario', '')
         makers_str = submission_data.get('all_maker_inputs', '')
         filenames_str = submission_data.get('all_filenames', '')
         makers_list_original = [m.strip() for m in makers_str.split(',') if m.strip()]
         filenames_list_original = [f.strip() for f in filenames_str.split(',') if f.strip()]
-
         if not char_beneficiario_original or not makers_list_original or not filenames_list_original:
-            flash(f"Erro: Dados incompletos na submissão {submission_id} no CSV.", "danger")
-            logging.error(f"Dados incompletos na linha do CSV para submissão {submission_id}.")
-            return redirect(url_for('pagina_revisao'))
+            flash(f"Erro: Dados incompletos na submissão {submission_id}.", "danger"); logging.error(f"Dados incompletos CSV para {submission_id}."); return redirect(url_for('pagina_revisao'))
         if len(makers_list_original) != len(filenames_list_original):
-             flash(f"Erro: Inconsistência de dados na submissão {submission_id} (contagem maker/file).", "danger")
-             logging.error(f"Inconsistência M/F na linha do CSV para submissão {submission_id}.")
-             return redirect(url_for('pagina_revisao'))
-        
-        # Revalida usando os dados mais atuais
+             flash(f"Erro: Inconsistência dados {submission_id} (M/F).", "danger"); logging.error(f"Inconsistência M/F CSV para {submission_id}."); return redirect(url_for('pagina_revisao'))
         validated_data_atual = get_validated_data()
         beneficiario_lower = char_beneficiario_original.lower()
         rejection_reason, rejection_message = None, None
-
         current_beneficiary_makers_count = validated_data_atual['beneficiarios_makers_count'].get(beneficiario_lower, 0)
         approvals_in_this_submission = len(makers_list_original)
-        
-        logging.info(f"Revalidando aprovação para B:'{char_beneficiario_original}'. Makers Aprovados atualmente:{current_beneficiary_makers_count}/{BENEFICIARIO_APPROVAL_LIMIT}. Esta submissão adicionaria +{approvals_in_this_submission}")
-
+        logging.info(f"Revalidando aprovação B:'{char_beneficiario_original}'. Aprovados:{current_beneficiary_makers_count}/{BENEFICIARIO_APPROVAL_LIMIT}. +{approvals_in_this_submission}")
         if current_beneficiary_makers_count + approvals_in_this_submission > BENEFICIARIO_APPROVAL_LIMIT:
             rejection_reason = 'beneficiario_limit_reached_aprovacao'
-            rejection_message = f"Aprovação Bloqueada: Beneficiário '{char_beneficiario_original}' já tem {current_beneficiary_makers_count} makers aprovados. Aprovar esta submissão com {approvals_in_this_submission} makers excederia o limite de {BENEFICIARIO_APPROVAL_LIMIT}."
+            rejection_message = f"Bloqueado: B '{char_beneficiario_original}' ({current_beneficiary_makers_count}) excederia limite {BENEFICIARIO_APPROVAL_LIMIT} com +{approvals_in_this_submission}."
         else:
             for maker_name in makers_list_original:
                 maker_lower = maker_name.lower()
-                # Verifica se o maker já está no conjunto global de makers aprovados
                 if maker_lower in validated_data_atual['used_makers_global']: 
-                    rejection_reason = 'maker_duplicate_aprovacao'
-                    rejection_message = f"Aprovação Bloqueada: O Maker '{maker_name}' já foi utilizado em uma validação aprovada anteriormente."; break
-        
+                    rejection_reason = 'maker_duplicate_aprovacao'; rejection_message = f"Bloqueado: Maker '{maker_name}' já utilizado."; break
         if rejection_reason:
-            flash(rejection_message, 'warning')
-            logging.warning(f"Aprovação da submissão {submission_id} bloqueada na revalidação ({rejection_reason}): {rejection_message}")
-            return redirect(url_for('pagina_revisao'))
-
+            flash(rejection_message, 'warning'); logging.warning(f"Aprovação {submission_id} bloqueada ({rejection_reason}): {rejection_message}"); return redirect(url_for('pagina_revisao'))
         all_moved = True; moved_files = []
-        logging.debug(f"Tentando mover {len(filenames_list_original)} arquivos de {SUSPEITOS_DIR} para {PROCESSADOS_DIR}...")
+        logging.debug(f"Movendo {len(filenames_list_original)} arquivos de {SUSPEITOS_DIR} para {PROCESSADOS_DIR}...")
         for filename in filenames_list_original:
-            path_suspeito = os.path.join(SUSPEITOS_DIR, filename)
-            path_processado = os.path.join(PROCESSADOS_DIR, filename)
+            path_suspeito = os.path.join(SUSPEITOS_DIR, filename); path_processado = os.path.join(PROCESSADOS_DIR, filename)
             if os.path.exists(path_suspeito):
-                try: 
-                    os.rename(path_suspeito, path_processado)
-                    moved_files.append(filename)
-                    logging.info(f"Arquivo movido: {filename} de {SUSPEITOS_DIR} para {PROCESSADOS_DIR}")
-                except OSError as e: 
-                    logging.error(f"Erro CRÍTICO ao mover arquivo {filename}: {e}")
-                    all_moved = False; break
-            else: 
-                logging.error(f"Arquivo {filename} NÃO encontrado em {SUSPEITOS_DIR} durante a tentativa de movê-lo! Aprovação cancelada.")
-                all_moved = False; break
-        
+                try: os.rename(path_suspeito, path_processado); moved_files.append(filename); logging.info(f"Arquivo movido: {filename}")
+                except OSError as e: logging.error(f"Erro CRÍTICO ao mover {filename}: {e}"); all_moved = False; break
+            else: logging.error(f"Arquivo {filename} NÃO encontrado em {SUSPEITOS_DIR} para mover!"); all_moved = False; break
         if not all_moved:
-            logging.warning(f"Falha ao mover um ou mais arquivos para {submission_id}. Revertendo movimentações...")
-            for fname in moved_files: # Tenta mover de volta os que foram movidos
-                try: 
-                    os.rename(os.path.join(PROCESSADOS_DIR, fname), os.path.join(SUSPEITOS_DIR, fname))
-                    logging.info(f"Arquivo revertido: {fname} de volta para {SUSPEITOS_DIR}")
-                except OSError as e_revert: 
-                    logging.error(f"Erro ao tentar reverter a movimentação do arquivo {fname}: {e_revert}")
-            flash(f"Erro crítico ao mover os arquivos da submissão {submission_id}. A aprovação foi cancelada. Verifique os logs.", "danger")
-            return redirect(url_for('pagina_revisao'))
-
+            logging.warning(f"Falha ao mover arquivos para {submission_id}. Revertendo...");
+            for fname in moved_files:
+                try: os.rename(os.path.join(PROCESSADOS_DIR, fname), os.path.join(SUSPEITOS_DIR, fname)); logging.info(f"Arquivo revertido: {fname}")
+                except OSError as e_revert: logging.error(f"Erro ao reverter {fname}: {e_revert}")
+            flash(f"Erro crítico ao mover arquivos {submission_id}. Aprovação cancelada.", "danger"); return redirect(url_for('pagina_revisao'))
         ts_revisao = datetime.datetime.now().isoformat()
         original_rows[row_index_to_update]['status_geral_submissao'] = 'Aprovado Manual'
         original_rows[row_index_to_update]['revisado_por'] = nome_revisor_manual
         original_rows[row_index_to_update]['timestamp_revisao'] = ts_revisao
         original_rows[row_index_to_update]['rejection_reason'] = '' 
-        
-        logging.debug(f"Reescrevendo {PROCESSADOS_CSV} com linha {row_index_to_update} atualizada para 'Aprovado Manual'.")
+        logging.debug(f"Reescrevendo {PROCESSADOS_CSV} com linha {row_index_to_update} 'Aprovado Manual'.")
         with open(PROCESSADOS_CSV, 'w', newline='', encoding='utf-8') as outfile:
              writer = csv.DictWriter(outfile, fieldnames=PROCESSADOS_FIELDS); writer.writeheader(); writer.writerows(original_rows)
-        
-        log_revisao(ts_revisao, nome_revisor_manual, char_beneficiario_original, makers_list_original, filenames_list_original, "Aprovado Manual") # Ação como Aprovado Manual
-        
-        flash(f"Submissão para '{char_beneficiario_original}' (Makers: {', '.join(makers_list_original)}) aprovada com sucesso por '{nome_revisor_manual}'.", "success")
+        log_revisao(ts_revisao, nome_revisor_manual, char_beneficiario_original, makers_list_original, filenames_list_original, "Aprovado Manual")
+        flash(f"Submissão para '{char_beneficiario_original}' (Makers: {', '.join(makers_list_original)}) aprovada por '{nome_revisor_manual}'.", "success")
         flash(f"'{char_beneficiario_original}' agora tem {current_beneficiary_makers_count + approvals_in_this_submission} makers aprovados de {BENEFICIARIO_APPROVAL_LIMIT}.", "info")
         logging.info(f"Submissão {submission_id} aprovada por {nome_revisor_manual}.")
-
     except FileNotFoundError:
-        flash(f"Erro crítico: Arquivo {PROCESSADOS_CSV} não encontrado durante a aprovação.", "danger")
-        logging.error(f"FileNotFoundError ao tentar aprovar {submission_id}.")
+        flash(f"Erro crítico: Arquivo {PROCESSADOS_CSV} não encontrado.", "danger"); logging.error(f"FileNotFoundError ao aprovar {submission_id}.")
     except Exception as e:
-        flash(f"Erro inesperado ao tentar aprovar a submissão {submission_id}: {e}", "danger")
-        logging.exception(f"Erro inesperado na rota /aprovar para {submission_id}: {e}")
-    
+        flash(f"Erro inesperado ao aprovar {submission_id}: {e}", "danger"); logging.exception(f"Erro inesperado /aprovar {submission_id}: {e}")
     return redirect(url_for('pagina_revisao'))
 
 @app.route('/rejeitar/<submission_id>', methods=['POST'])
@@ -656,81 +566,48 @@ def aprovar_par(submission_id):
 def rejeitar_submissao(submission_id):
     nome_revisor = request.form.get('revisor_name', '').strip()
     motivo_rejeicao = request.form.get('rejection_reason', '').strip()
-
-    if not nome_revisor:
-        flash("Nome do revisor é obrigatório para rejeitar.", "warning")
-        return redirect(url_for('pagina_revisao'))
-    if not motivo_rejeicao:
-        flash("Motivo da rejeição é obrigatório.", "warning")
-        return redirect(url_for('pagina_revisao'))
-
-    logging.info(f"Tentativa de rejeição por '{nome_revisor}' para Submissão ID: '{submission_id}' com motivo: '{motivo_rejeicao}'")
-
-    original_rows = []
-    row_index_to_update = -1
-    submission_data = None
-
+    if not nome_revisor: flash("Nome do revisor é obrigatório para rejeitar.", "warning"); return redirect(url_for('pagina_revisao'))
+    if not motivo_rejeicao: flash("Motivo da rejeição é obrigatório.", "warning"); return redirect(url_for('pagina_revisao'))
+    logging.info(f"Tentativa de rejeição por '{nome_revisor}' para ID: '{submission_id}' motivo: '{motivo_rejeicao}'")
+    original_rows = []; row_index_to_update = -1; submission_data = None
     try:
-        # initialize_csv(PROCESSADOS_CSV, PROCESSADOS_FIELDS) # Já chamado
         with open(PROCESSADOS_CSV, 'r', newline='', encoding='utf-8') as infile:
             reader = csv.DictReader(infile)
             if not reader.fieldnames or not all(f in reader.fieldnames for f in PROCESSADOS_FIELDS):
-                flash("Erro crítico: Formato do arquivo processados.csv inválido.", "danger")
-                logging.error("Formato inválido do processados.csv ao tentar rejeitar.")
-                return redirect(url_for('pagina_revisao'))
+                flash("Erro crítico: Formato do processados.csv inválido.", "danger"); logging.error("Formato inválido processados.csv ao rejeitar."); return redirect(url_for('pagina_revisao'))
             original_rows = list(reader)
-
         for i, row in enumerate(original_rows):
             if row.get('timestamp') == submission_id and row.get('status_geral_submissao', '').strip() == 'Pendente Revisão':
-                submission_data = row
-                row_index_to_update = i
-                logging.debug(f"Encontrada submissão pendente no CSV para rejeição. ID {submission_id} na linha {i}.")
-                break
-        
+                submission_data = row; row_index_to_update = i; logging.debug(f"Encontrada submissão pendente CSV para rejeição. ID {submission_id} linha {i}."); break
         if not submission_data:
-            flash(f"Erro: Submissão com ID '{submission_id}' não encontrada ou já processada.", "danger")
-            logging.error(f"Tentativa de rejeitar submissão {submission_id} falhou: Não encontrada ou não está pendente.")
-            return redirect(url_for('pagina_revisao'))
-
+            flash(f"Erro: Submissão ID '{submission_id}' não encontrada ou já processada.", "danger"); logging.error(f"Rejeitar {submission_id} falhou: Não encontrada/pendente."); return redirect(url_for('pagina_revisao'))
         char_beneficiario = submission_data.get('char_beneficiario', '')
         makers_str = submission_data.get('all_maker_inputs', '')
-        filenames_str = submission_data.get('all_filenames', '') # Nomes dos arquivos não são alterados
+        filenames_str = submission_data.get('all_filenames', '')
         makers_list = [m.strip() for m in makers_str.split(',') if m.strip()]
         filenames_list = [f.strip() for f in filenames_str.split(',') if f.strip()]
-
         ts_revisao = datetime.datetime.now().isoformat()
         original_rows[row_index_to_update]['status_geral_submissao'] = 'Rejeitado Manual'
         original_rows[row_index_to_update]['revisado_por'] = nome_revisor
         original_rows[row_index_to_update]['timestamp_revisao'] = ts_revisao
         original_rows[row_index_to_update]['rejection_reason'] = motivo_rejeicao
-
-        logging.debug(f"Reescrevendo {PROCESSADOS_CSV} com linha {row_index_to_update} atualizada para 'Rejeitado Manual'.")
+        logging.debug(f"Reescrevendo {PROCESSADOS_CSV} com linha {row_index_to_update} 'Rejeitado Manual'.")
         with open(PROCESSADOS_CSV, 'w', newline='', encoding='utf-8') as outfile:
-             writer = csv.DictWriter(outfile, fieldnames=PROCESSADOS_FIELDS)
-             writer.writeheader()
-             writer.writerows(original_rows)
-        
+             writer = csv.DictWriter(outfile, fieldnames=PROCESSADOS_FIELDS); writer.writeheader(); writer.writerows(original_rows)
         log_revisao(ts_revisao, nome_revisor, char_beneficiario, makers_list, filenames_list, "Rejeitado Manual", motivo_rejeicao)
-        
         flash(f"Submissão para '{char_beneficiario}' (Makers: {', '.join(makers_list)}) REJEITADA por '{nome_revisor}'. Motivo: {motivo_rejeicao}", "warning")
         logging.info(f"Submissão {submission_id} rejeitada por {nome_revisor}. Motivo: {motivo_rejeicao}")
-
     except FileNotFoundError:
-        flash(f"Erro crítico: Arquivo {PROCESSADOS_CSV} não encontrado durante a rejeição.", "danger")
-        logging.error(f"FileNotFoundError ao tentar rejeitar {submission_id}.")
+        flash(f"Erro crítico: Arquivo {PROCESSADOS_CSV} não encontrado.", "danger"); logging.error(f"FileNotFoundError ao rejeitar {submission_id}.")
     except Exception as e:
-        flash(f"Erro inesperado ao rejeitar a submissão {submission_id}: {e}", "danger")
-        logging.exception(f"Erro inesperado na rota /rejeitar para {submission_id}: {e}")
-    
+        flash(f"Erro inesperado ao rejeitar {submission_id}: {e}", "danger"); logging.exception(f"Erro inesperado /rejeitar {submission_id}: {e}")
     return redirect(url_for('pagina_revisao'))
-
 
 @app.route('/validados_publico', methods=['GET'])
 def validados_publico():
     validacoes_publicas_agg = defaultdict(lambda: {'submissoes_aprovadas': 0, 'makers_aprovados_count': 0})
     error_msg = None
     try:
-        # initialize_all_csvs() # Já chamado
         if not os.path.exists(PROCESSADOS_CSV) or os.path.getsize(PROCESSADOS_CSV) == 0: 
             error_msg = "Nenhuma validação registrada ainda."
         else:
@@ -746,21 +623,16 @@ def validados_publico():
                                 validacoes_publicas_agg[beneficiario_nome]['submissoes_aprovadas'] += 1
                                 makers_in_row = row.get('all_maker_inputs','').split(',')
                                 validacoes_publicas_agg[beneficiario_nome]['makers_aprovados_count'] += len([m for m in makers_in_row if m.strip()])
-        
         validacoes_para_template = []
         for nome, data in validacoes_publicas_agg.items():
             validacoes_para_template.append({
                 'beneficiario': nome,
-                'submissoes_aprovadas': data['submissoes_aprovadas'], # Mantido se precisar
-                'makers_aprovados': data['makers_aprovados_count'] # Principal métrica
+                'submissoes_aprovadas': data['submissoes_aprovadas'],
+                'makers_aprovados': data['makers_aprovados_count']
             })
-        
         validacoes_ordenadas = sorted(validacoes_para_template, key=lambda x: (-x['makers_aprovados'], x['beneficiario']))
-
     except Exception as e: 
-        error_msg = f"Erro ao carregar validações públicas: {e}"
-        logging.exception(error_msg)
-    
+        error_msg = f"Erro ao carregar validações públicas: {e}"; logging.exception(error_msg)
     return render_template('validados_publico.html', validacoes=validacoes_ordenadas, limit=BENEFICIARIO_APPROVAL_LIMIT, error=error_msg)
 
-
+# --- Bloco de Inicialização Removido para Produção com Gunicorn ---
